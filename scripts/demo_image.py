@@ -4,12 +4,15 @@ import os
 import platform
 import sys
 import time
-
+import math
 import numpy as np
 import torch
 from tqdm import tqdm
 import natsort
-
+import json
+import csv
+import pandas as pd
+from sklearn.model_selection import train_test_split
 from detector.apis import get_detector
 from trackers.tracker_api import Tracker
 from trackers.tracker_cfg import cfg as tcfg
@@ -20,27 +23,37 @@ from alphapose.utils.detector import DetectionLoader
 from alphapose.utils.file_detector import FileDetectionLoader
 from alphapose.utils.transforms import flip, flip_heatmap
 from alphapose.utils.vis import getTime
+from alphapose.utils.webcam_detector import WebCamDetectionLoader
 from alphapose.utils.writer import DataWriter
+
+current_directory = os.path.dirname(__file__)
+print(current_directory)
+
 
 """----------------------------- Demo options -----------------------------"""
 parser = argparse.ArgumentParser(description='AlphaPose Demo')
-parser.add_argument('--cfg', type=str, required=True,
+parser.add_argument('--cfg', type=str, required=False,
+                    default=
+                        current_directory+ "/../configs/coco/resnet/256x192_res50_lr1e-3_1x.yaml",
                     help='experiment configure file name')
-parser.add_argument('--checkpoint', type=str, required=True,
+parser.add_argument('--checkpoint', type=str, required=False,
+                    default=current_directory+ "/../pretrained_models/fast_res50_256x192.pth",
                     help='checkpoint file name')
-parser.add_argument('--sp', default=False, action='store_true',
+parser.add_argument('--sp', default=True, action='store_true',
                     help='Use single process for pytorch')
 parser.add_argument('--detector', dest='detector',
                     help='detector name', default="yolo")
+parser.add_argument('--detfile', dest='detfile',
+                    help='detection result file', default="")
 parser.add_argument('--indir', dest='inputpath',
-                    help='image-directory', default="")
+                    help='image-directory',default="")
 parser.add_argument('--list', dest='inputlist',
                     help='image-list', default="")
 parser.add_argument('--image', dest='inputimg',
                     help='image-name', default="")
 parser.add_argument('--outdir', dest='outputpath',
-                    help='output-directory', default="examples/res/")
-parser.add_argument('--save_img', default=False, action='store_true',
+                    help='output-directory')
+parser.add_argument('--save_img', default=True, action='store_true',
                     help='save result as image')
 parser.add_argument('--vis', default=False, action='store_true',
                     help='visualize image')
@@ -66,7 +79,15 @@ parser.add_argument('--flip', default=False, action='store_true',
                     help='enable flip testing')
 parser.add_argument('--debug', default=False, action='store_true',
                     help='print detail information')
-
+"""----------------------------- Video options -----------------------------"""
+parser.add_argument('--video', dest='video',
+                    help='video-name', default="")
+parser.add_argument('--webcam', dest='webcam', type=int,
+                    help='webcam number', default=-1)
+parser.add_argument('--save_video', dest='save_video',
+                    help='whether to save rendered video', default=False, action='store_true')
+parser.add_argument('--vis_fast', dest='vis_fast',
+                    help='use fast rendering', action='store_true', default=False)
 """----------------------------- Tracking options -----------------------------"""
 parser.add_argument('--pose_flow', dest='pose_flow',
                     help='track humans in video with PoseFlow', action='store_true', default=False)
@@ -75,6 +96,11 @@ parser.add_argument('--pose_track', dest='pose_track',
 
 args = parser.parse_args()
 cfg = update_config(args.cfg)
+
+# folder dataset
+args.inputimg = "C:/Users/Lenovo/Desktop/KI6/PBL5/TestImages3/192x256/CR_1_0096.jpg"
+# folder lưu kết quả
+args.outputpath = "C:/Users/Lenovo/Desktop/KI6/PBL5/TestImages3/192x256"
 
 if platform.system() == 'Windows':
     args.sp = True
@@ -93,9 +119,33 @@ if not args.sp:
 
 
 def check_input():
+    # # for wecam
+    if args.webcam != -1:
+        args.detbatch = 1
+        return 'webcam', int(args.webcam)
+
+    # for video
+    if len(args.video):
+        if os.path.isfile(args.video):
+            videofile = args.video
+            return 'video', videofile
+        else:
+            raise IOError(
+                'Error: --video must refer to a video file, not directory.')
+
+    # for detection results
+    if len(args.detfile):
+        if os.path.isfile(args.detfile):
+            detfile = args.detfile
+            return 'detfile', detfile
+        else:
+            raise IOError(
+                'Error: --detfile must refer to a detection json file, not directory.')
 
     # for images
+    print(args.inputimg+"ne")
     if len(args.inputpath) or len(args.inputlist) or len(args.inputimg):
+
         inputpath = args.inputpath
         inputlist = args.inputlist
         inputimg = args.inputimg
@@ -130,16 +180,29 @@ def loop():
         n += 1
 
 
+
 if __name__ == "__main__":
+
+
+
     mode, input_source = check_input()
 
     if not os.path.exists(args.outputpath):
         os.makedirs(args.outputpath)
 
     # Load detection loader
-    det_loader = DetectionLoader(input_source, get_detector(
-        args), cfg, args, batchSize=args.detbatch, mode=mode, queueSize=args.qsize)
-    det_worker = det_loader.start()
+    if mode == 'webcam':
+        det_loader = WebCamDetectionLoader(
+            input_source, get_detector(args), cfg, args)
+        det_worker = det_loader.start()
+    elif mode == 'detfile':
+        det_loader = FileDetectionLoader(input_source, cfg, args)
+        det_worker = det_loader.start()
+    else:
+
+        det_loader = DetectionLoader(input_source, get_detector(
+            args), cfg, args, batchSize=args.detbatch, mode=mode, queueSize=args.qsize)
+        det_worker = det_loader.start()
 
     # Load pose model
     pose_model = builder.build_sppe(cfg.MODEL, preset_cfg=cfg.DATA_PRESET)
@@ -164,13 +227,29 @@ if __name__ == "__main__":
     }
 
     # Init data writer
-    queueSize = args.qsize
+    queueSize = 2 if mode == 'webcam' else args.qsize
+    if args.save_video and mode != 'image':
+        from alphapose.utils.writer import DEFAULT_VIDEO_SAVE_OPT as video_save_opt
+        if mode == 'video':
+            video_save_opt['savepath'] = os.path.join(
+                args.outputpath, 'AlphaPose_' + os.path.basename(input_source))
+        else:
+            video_save_opt['savepath'] = os.path.join(
+                args.outputpath, 'AlphaPose_webcam' + str(input_source) + '.mp4')
+        video_save_opt.update(det_loader.videoinfo)
+        writer = DataWriter(cfg, args, save_video=True,
+                            video_save_opt=video_save_opt, queueSize=queueSize).start()
+    else:
+        writer = DataWriter(cfg, args, save_video=False,
+                            queueSize=queueSize).start()
 
-    writer = DataWriter(cfg, args, save_video=False,
-                        queueSize=queueSize).start()
-
-    data_len = det_loader.length
-    im_names_desc = tqdm(range(data_len), dynamic_ncols=True)
+    if mode == 'webcam':
+        print('Starting webcam demo, press Ctrl + C to terminate...')
+        sys.stdout.flush()
+        im_names_desc = tqdm(loop())
+    else:
+        data_len = det_loader.length
+        im_names_desc = tqdm(range(data_len), dynamic_ncols=True)
 
     batchSize = args.posebatch
     if args.flip:

@@ -20,7 +20,7 @@ DEFAULT_VIDEO_SAVE_OPT = {
 
 EVAL_JOINTS = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]
 
-
+# final_result_1 = []
 class DataWriter():
     def __init__(self, cfg, opt, save_video=False,
                  video_save_opt=DEFAULT_VIDEO_SAVE_OPT,
@@ -45,7 +45,8 @@ class DataWriter():
 
         if opt.pose_flow:
             from trackers.PoseFlow.poseflow_infer import PoseFlowWrapper
-            self.pose_flow_wrapper = PoseFlowWrapper(save_path=os.path.join(opt.outputpath, 'poseflow'))
+            self.pose_flow_wrapper = PoseFlowWrapper(
+                save_path=os.path.join(opt.outputpath, 'poseflow'))
 
         if self.opt.save_img or self.save_video or self.opt.vis:
             loss_type = self.cfg.DATA_PRESET.get('LOSS_TYPE', 'MSELoss')
@@ -59,9 +60,11 @@ class DataWriter():
                     hand_face_num = 42
                 else:
                     hand_face_num = 110
-                self.vis_thres = [0.4] * (num_joints - hand_face_num) + [0.05] * hand_face_num
+                self.vis_thres = [
+                    0.4] * (num_joints - hand_face_num) + [0.05] * hand_face_num
 
-        self.use_heatmap_loss = (self.cfg.DATA_PRESET.get('LOSS_TYPE', 'MSELoss') == 'MSELoss')
+        self.use_heatmap_loss = (self.cfg.DATA_PRESET.get(
+            'LOSS_TYPE', 'MSELoss') == 'MSELoss')
 
     def start_worker(self, target):
         if self.opt.sp:
@@ -83,47 +86,55 @@ class DataWriter():
         hm_size = self.cfg.DATA_PRESET.HEATMAP_SIZE
         if self.save_video:
             # initialize the file video stream, adapt ouput video resolution to original video
-            stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
+            stream = cv2.VideoWriter(
+                *[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
             if not stream.isOpened():
                 print("Try to use other video encoders...")
                 ext = self.video_save_opt['savepath'].split('.')[-1]
                 fourcc, _ext = self.recognize_video_ext(ext)
                 self.video_save_opt['fourcc'] = fourcc
                 self.video_save_opt['savepath'] = self.video_save_opt['savepath'][:-4] + _ext
-                stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
+                stream = cv2.VideoWriter(
+                    *[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
             assert stream.isOpened(), 'Cannot open video for writing'
         # keep looping infinitelyd
         while True:
             # ensure the queue is not empty and get item
-            (boxes, scores, ids, hm_data, cropped_boxes, orig_img, im_name) = self.wait_and_get(self.result_queue)
+            (boxes, scores, ids, hm_data, cropped_boxes, orig_img,
+             im_name) = self.wait_and_get(self.result_queue)
             if orig_img is None:
                 # if the thread indicator variable is set (img is None), stop the thread
                 if self.save_video:
                     stream.release()
-                write_json(final_result, self.opt.outputpath, form=self.opt.format, for_eval=self.opt.eval)
-                print("Results have been written to json.")
+
+                self.final_result_1 = final_result[0]["result"][0]["keypoints"].tolist()
+
+                # write_json(final_result, self.opt.outputpath,
+                #            form=self.opt.format, for_eval=self.opt.eval)
+                print("Results have been written to json 1.")
                 return
             # image channel RGB->BGR
             orig_img = np.array(orig_img, dtype=np.uint8)[:, :, ::-1]
             if boxes is None or len(boxes) == 0:
                 if self.opt.save_img or self.save_video or self.opt.vis:
-                    self.write_image(orig_img, im_name, stream=stream if self.save_video else None)
+                    self.write_image(
+                        orig_img, im_name, stream=stream if self.save_video else None)
             else:
                 # location prediction (n, kp, 2) | score prediction (n, kp, 1)
                 assert hm_data.dim() == 4
 
                 face_hand_num = 110
                 if hm_data.size()[1] == 136:
-                    self.eval_joints = [*range(0,136)]
+                    self.eval_joints = [*range(0, 136)]
                 elif hm_data.size()[1] == 26:
-                    self.eval_joints = [*range(0,26)]
+                    self.eval_joints = [*range(0, 26)]
                 elif hm_data.size()[1] == 133:
-                    self.eval_joints = [*range(0,133)]
+                    self.eval_joints = [*range(0, 133)]
                 elif hm_data.size()[1] == 68:
                     face_hand_num = 42
-                    self.eval_joints = [*range(0,68)]
+                    self.eval_joints = [*range(0, 68)]
                 elif hm_data.size()[1] == 21:
-                    self.eval_joints = [*range(0,21)]
+                    self.eval_joints = [*range(0, 21)]
                 pose_coords = []
                 pose_scores = []
                 for i in range(hm_data.shape[0]):
@@ -133,27 +144,33 @@ class DataWriter():
                             hm_data[i][self.eval_joints[:-face_hand_num]], bbox, hm_shape=hm_size, norm_type=norm_type)
                         pose_coords_face_hand, pose_scores_face_hand = self.heatmap_to_coord[1](
                             hm_data[i][self.eval_joints[-face_hand_num:]], bbox, hm_shape=hm_size, norm_type=norm_type)
-                        pose_coord = np.concatenate((pose_coords_body_foot, pose_coords_face_hand), axis=0)
-                        pose_score = np.concatenate((pose_scores_body_foot, pose_scores_face_hand), axis=0)
+                        pose_coord = np.concatenate(
+                            (pose_coords_body_foot, pose_coords_face_hand), axis=0)
+                        pose_score = np.concatenate(
+                            (pose_scores_body_foot, pose_scores_face_hand), axis=0)
                     else:
-                        pose_coord, pose_score = self.heatmap_to_coord(hm_data[i][self.eval_joints], bbox, hm_shape=hm_size, norm_type=norm_type)
-                    pose_coords.append(torch.from_numpy(pose_coord).unsqueeze(0))
-                    pose_scores.append(torch.from_numpy(pose_score).unsqueeze(0))
+                        pose_coord, pose_score = self.heatmap_to_coord(
+                            hm_data[i][self.eval_joints], bbox, hm_shape=hm_size, norm_type=norm_type)
+                    pose_coords.append(
+                        torch.from_numpy(pose_coord).unsqueeze(0))
+                    pose_scores.append(
+                        torch.from_numpy(pose_score).unsqueeze(0))
                 preds_img = torch.cat(pose_coords)
                 preds_scores = torch.cat(pose_scores)
                 if not self.opt.pose_track:
                     boxes, scores, ids, preds_img, preds_scores, pick_ids = \
-                        pose_nms(boxes, scores, ids, preds_img, preds_scores, self.opt.min_box_area, use_heatmap_loss=self.use_heatmap_loss)
+                        pose_nms(boxes, scores, ids, preds_img, preds_scores,
+                                 self.opt.min_box_area, use_heatmap_loss=self.use_heatmap_loss)
 
                 _result = []
                 for k in range(len(scores)):
                     _result.append(
                         {
-                            'keypoints':preds_img[k],
-                            'kp_score':preds_scores[k],
+                            'keypoints': preds_img[k],
+                            'kp_score': preds_scores[k],
                             'proposal_score': torch.mean(preds_scores[k]) + scores[k] + 1.25 * max(preds_scores[k]),
-                            'idx':ids[k],
-                            'box':[boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]] 
+                            'idx': ids[k],
+                            'box': [boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0], boxes[k][3]-boxes[k][1]]
                         }
                     )
 
@@ -162,9 +179,9 @@ class DataWriter():
                     'result': _result
                 }
 
-
                 if self.opt.pose_flow:
-                    poseflow_result = self.pose_flow_wrapper.step(orig_img, result)
+                    poseflow_result = self.pose_flow_wrapper.step(
+                        orig_img, result)
                     for i in range(len(poseflow_result)):
                         result['result'][i]['idx'] = poseflow_result[i]['idx']
 
@@ -177,7 +194,8 @@ class DataWriter():
                     else:
                         from alphapose.utils.vis import vis_frame
                     img = vis_frame(orig_img, result, self.opt, self.vis_thres)
-                    self.write_image(img, im_name, stream=stream if self.save_video else None)
+                    self.write_image(
+                        img, im_name, stream=stream if self.save_video else None)
 
     def write_image(self, img, im_name, stream=None):
         if self.opt.vis:
@@ -196,7 +214,8 @@ class DataWriter():
 
     def save(self, boxes, scores, ids, hm_data, cropped_boxes, orig_img, im_name):
         # save next frame in the queue
-        self.wait_and_put(self.result_queue, (boxes, scores, ids, hm_data, cropped_boxes, orig_img, im_name))
+        self.wait_and_put(self.result_queue, (boxes, scores,
+                          ids, hm_data, cropped_boxes, orig_img, im_name))
 
     def running(self):
         # indicate that the thread is still running
@@ -217,7 +236,7 @@ class DataWriter():
 
     def clear_queues(self):
         self.clear(self.result_queue)
-        
+
     def clear(self, queue):
         while not queue.empty():
             queue.get()

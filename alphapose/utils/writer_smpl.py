@@ -44,13 +44,15 @@ class DataWriterSMPL():
 
         if opt.pose_flow:
             from trackers.PoseFlow.poseflow_infer import PoseFlowWrapper
-            self.pose_flow_wrapper = PoseFlowWrapper(save_path=os.path.join(opt.outputpath, 'poseflow'))
+            self.pose_flow_wrapper = PoseFlowWrapper(
+                save_path=os.path.join(opt.outputpath, 'poseflow'))
 
         if self.opt.save_img or self.save_video or self.opt.vis:
             # loss_type = self.cfg.DATA_PRESET.get('LOSS_TYPE', 'MSELoss')
             self.vis_thres = [0.01] * 29
 
-        self.use_heatmap_loss = (self.cfg.DATA_PRESET.get('LOSS_TYPE', 'MSELoss') == 'MSELoss')
+        self.use_heatmap_loss = (self.cfg.DATA_PRESET.get(
+            'LOSS_TYPE', 'MSELoss') == 'MSELoss')
 
     def start_worker(self, target):
         if self.opt.sp:
@@ -72,7 +74,8 @@ class DataWriterSMPL():
         hm_size = self.cfg.DATA_PRESET.HEATMAP_SIZE
         if self.save_video:
             # initialize the file video stream, adapt ouput video resolution to original video
-            stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
+            stream = cv2.VideoWriter(
+                *[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
             if not stream.isOpened():
                 print("Try to use other video encoders...")
                 ext = self.video_save_opt['savepath'].split('.')[-1]
@@ -82,9 +85,11 @@ class DataWriterSMPL():
                 if self.opt.show_skeleton:
                     ori_w, ori_h = self.video_save_opt['frameSize']
                     skeleton_img_h, skeleton_img_w = 694, 693
-                    new_h, new_w = max(skeleton_img_h, ori_h), skeleton_img_w + ori_w
+                    new_h, new_w = max(
+                        skeleton_img_h, ori_h), skeleton_img_w + ori_w
                     self.video_save_opt['frameSize'] = new_w, new_h
-                stream = cv2.VideoWriter(*[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
+                stream = cv2.VideoWriter(
+                    *[self.video_save_opt[k] for k in ['savepath', 'fourcc', 'fps', 'frameSize']])
             assert stream.isOpened(), 'Cannot open video for writing'
         # keep looping infinitelyd
         while True:
@@ -95,22 +100,29 @@ class DataWriterSMPL():
                 # if the thread indicator variable is set (img is None), stop the thread
                 if self.save_video:
                     stream.release()
-                write_json(final_result, self.opt.outputpath, form=self.opt.format, for_eval=self.opt.eval)
-                print("Results have been written to json.")
+                write_json(final_result, self.opt.outputpath,
+                           form=self.opt.format, for_eval=self.opt.eval)
+                print("Results have been written to json 2.")
                 return
             # image channel RGB->BGR
             orig_img = np.array(orig_img, dtype=np.uint8)[:, :, ::-1]
             if boxes is None or len(boxes) == 0:
                 if self.opt.save_img or self.save_video or self.opt.vis:
-                    self.write_image(orig_img, im_name, stream=stream if self.save_video else None)
+                    self.write_image(
+                        orig_img, im_name, stream=stream if self.save_video else None)
             else:
                 # location prediction (n, kp, 2) | score prediction (n, kp, 1)
-                uv_29 = smpl_output['pred_uvd_jts'].reshape(-1, 29, 3)[:, :, :2].cpu()
-                pred_xyz_jts_24 = smpl_output['pred_xyz_jts_24'].reshape(-1, 24, 3).cpu()
+                uv_29 = smpl_output['pred_uvd_jts'].reshape(-1, 29, 3)[
+                    :, :, :2].cpu()
+                pred_xyz_jts_24 = smpl_output['pred_xyz_jts_24'].reshape(
+                    -1, 24, 3).cpu()
 
-                pose_coords = uv_29 * (cropped_boxes[:, [2], None] - cropped_boxes[:, [0], None])
-                pose_coords[:, :, 0] = pose_coords[:, :, 0] + (cropped_boxes[:, [0]] + cropped_boxes[:, [2]]) / 2
-                pose_coords[:, :, 1] = pose_coords[:, :, 1] + (cropped_boxes[:, [1]] + cropped_boxes[:, [3]]) / 2
+                pose_coords = uv_29 * \
+                    (cropped_boxes[:, [2], None] - cropped_boxes[:, [0], None])
+                pose_coords[:, :, 0] = pose_coords[:, :, 0] + \
+                    (cropped_boxes[:, [0]] + cropped_boxes[:, [2]]) / 2
+                pose_coords[:, :, 1] = pose_coords[:, :, 1] + \
+                    (cropped_boxes[:, [1]] + cropped_boxes[:, [3]]) / 2
 
                 preds_img = pose_coords
                 preds_scores = 1 - smpl_output['maxvals'].reshape(-1, 29, 1)
@@ -131,9 +143,9 @@ class DataWriterSMPL():
                             'bbox_score': scores[k].cpu(),
                             'idx': int(ids[k]),
                             # xywh
-                            'box': [boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0],boxes[k][3]-boxes[k][1]],
+                            'box': [boxes[k][0], boxes[k][1], boxes[k][2]-boxes[k][0], boxes[k][3]-boxes[k][1]],
                             # xywh
-                            'crop_box': [cropped_boxes[k][0], cropped_boxes[k][1], cropped_boxes[k][2]-cropped_boxes[k][0],cropped_boxes[k][3]-cropped_boxes[k][1]] 
+                            'crop_box': [cropped_boxes[k][0], cropped_boxes[k][1], cropped_boxes[k][2]-cropped_boxes[k][0], cropped_boxes[k][3]-cropped_boxes[k][1]]
                         }
                     )
 
@@ -143,18 +155,22 @@ class DataWriterSMPL():
                 }
 
                 if self.opt.pose_flow:
-                    poseflow_result = self.pose_flow_wrapper.step(orig_img, result)
+                    poseflow_result = self.pose_flow_wrapper.step(
+                        orig_img, result)
                     for i in range(len(poseflow_result)):
                         result['result'][i]['idx'] = poseflow_result[i]['idx']
 
                 final_result.append(result)
                 if self.opt.save_img or self.save_video or self.opt.vis:
                     from alphapose.utils.vis import vis_frame_smpl
-                    img = vis_frame_smpl(orig_img, result, smpl_output, self.opt, self.vis_thres)
+                    img = vis_frame_smpl(
+                        orig_img, result, smpl_output, self.opt, self.vis_thres)
                     if self.opt.show_skeleton:
                         from alphapose.utils.vis import vis_frame_skeleton
-                        img = vis_frame_skeleton(img, result, smpl_output, self.opt, self.vis_thres)
-                    self.write_image(img, im_name, stream=stream if self.save_video else None)
+                        img = vis_frame_skeleton(
+                            img, result, smpl_output, self.opt, self.vis_thres)
+                    self.write_image(
+                        img, im_name, stream=stream if self.save_video else None)
 
     def write_image(self, img, im_name, stream=None):
         if self.opt.vis:
@@ -173,7 +189,8 @@ class DataWriterSMPL():
 
     def save(self, boxes, scores, ids, hm_data, cropped_boxes, orig_img, im_name):
         # save next frame in the queue
-        self.wait_and_put(self.result_queue, (boxes, scores, ids, hm_data, cropped_boxes, orig_img, im_name))
+        self.wait_and_put(self.result_queue, (boxes, scores,
+                          ids, hm_data, cropped_boxes, orig_img, im_name))
 
     def running(self):
         # indicate that the thread is still running
@@ -194,7 +211,7 @@ class DataWriterSMPL():
 
     def clear_queues(self):
         self.clear(self.result_queue)
-        
+
     def clear(self, queue):
         while not queue.empty():
             queue.get()
